@@ -25,10 +25,6 @@ try { await import('@xi-era/acp-sdk/server'); } catch { sdkAvailable = false; }
 const describeSdk = sdkAvailable ? describe : describe.skip;
 
 describeSdk('AcpSdkAdapter：真实 AcpServer + AcpClient WS 传输', () => {
-  // 端口分配：避免与其他测试冲突
-  const CLOUD_PORT = 19101;
-  const EDGE_PORT = 19102;
-
   let cloudAdapter: AcpSdkAdapter;
   let edgeAdapter: AcpSdkAdapter;
   let cloud: XepAgent;
@@ -40,17 +36,9 @@ describeSdk('AcpSdkAdapter：真实 AcpServer + AcpClient WS 传输', () => {
   });
 
   it('两个 adapter 启动、握手、goal.propose→running，验证真实 ACP 投递', async () => {
-    // 创建 adapter（不立即 start，先绑定 agent）
-    cloudAdapter = new AcpSdkAdapter({
-      agentId: 'cloud',
-      port: CLOUD_PORT,
-      peers: { edge: `ws://localhost:${EDGE_PORT}/acp` },
-    });
-    edgeAdapter = new AcpSdkAdapter({
-      agentId: 'edge',
-      port: EDGE_PORT,
-      peers: { cloud: `ws://localhost:${CLOUD_PORT}/acp` },
-    });
+    // 使用临时端口（port=0 由 OS 分配），避免固定端口冲突
+    cloudAdapter = new AcpSdkAdapter({ agentId: 'cloud', port: 0, peers: {} });
+    edgeAdapter = new AcpSdkAdapter({ agentId: 'edge', port: 0, peers: {} });
 
     cloud = new XepAgent({
       agentId: 'cloud',
@@ -68,15 +56,17 @@ describeSdk('AcpSdkAdapter：真实 AcpServer + AcpClient WS 传输', () => {
     cloud.start();
     edge.start();
 
-    // 启动真实 AcpServer
+    // 启动真实 AcpServer，拿到实际端口后互配 peer URL
     await edgeAdapter.start();
     await cloudAdapter.start();
+    cloudAdapter.setPeerUrl('edge', `ws://localhost:${edgeAdapter.listenPort}/acp`);
+    edgeAdapter.setPeerUrl('cloud', `ws://localhost:${cloudAdapter.listenPort}/acp`);
     await sleep(100); // 等待 WS 服务就绪
 
     // 能力握手
     cloud.sendHello('edge');
     edge.sendHello('cloud');
-    await sleep(200);
+    await sleep(300);
 
     expect(cloud.peerOf('edge')?.mask).toContain('offline_suspend');
     expect(edge.peerOf('cloud')?.mask).toContain('goal_migrate');

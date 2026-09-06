@@ -52,6 +52,7 @@ export class AcpSdkAdapter implements XepTransport {
   // lazily initialized after await start()
   private server: any = null; // AcpServer
   private clients = new Map<string, any>(); // peerId → AcpClient
+  private actualPort: number | null = null;
 
   constructor(opts: AcpSdkAdapterOptions) {
     this.agentId = opts.agentId;
@@ -122,7 +123,27 @@ export class AcpSdkAdapter implements XepTransport {
       },
     }));
 
-    await this.server.listen({ port: this.port });
+    const result = await this.server.listen({ port: this.port });
+    // listen({ port: 0 }) 时由 OS 分配临时端口，记录实际端口避免测试端口冲突
+    if (result && typeof result.port === 'number') {
+      this.actualPort = result.port;
+    }
+  }
+
+  /** 实际监听端口（port=0 时由 OS 分配；start() 后有效） */
+  get listenPort(): number {
+    return this.actualPort ?? this.port;
+  }
+
+  /** 动态设置对端 URL（临时端口场景：start() 后再配置 peer） */
+  setPeerUrl(agentId: string, url: string): void {
+    this.peers[agentId] = url;
+    // 若已有旧连接则关闭，下次 send 重建
+    const existing = this.clients.get(agentId);
+    if (existing) {
+      void existing.close();
+      this.clients.delete(agentId);
+    }
   }
 
   /** 关闭所有连接与服务器 */

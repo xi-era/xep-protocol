@@ -340,8 +340,7 @@ export class XepAgent {
         break;
       case 'trace.append':
       case 'error':
-      case 'goal.migrate':
-        // v0.1：trace.append 落日志即可；goal.migrate 为高阶能力未实现
+        // trace.append 落日志即可（已在 remoteKind 前记录）；error 由发起方处理
         break;
     }
   }
